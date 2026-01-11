@@ -1,17 +1,10 @@
 """Utility modules for B2B Complaint Analyzer"""
 
-from .security import SecurityManager, InputValidator
+# Only import modules that don't have heavy dependencies
+# Other modules should be imported directly where needed
 from .logging import setup_logging, get_logger
-from .cache import CacheManager
-from .database import DatabaseManager
-from .rate_limiter import RateLimiter
 
 __all__ = [
-    "SecurityManager",
-    "InputValidator",
     "setup_logging",
     "get_logger",
-    "CacheManager",
-    "DatabaseManager",
-    "RateLimiter",
 ]
