@@ -1,27 +1,72 @@
-"""xAI Grok API client for analysis and idea generation"""
+"""xAI Grok API client for analysis and idea generation with improved error handling"""
 
-from openai import OpenAI
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import json
 import re
+
+from openai import OpenAI
+from openai import APIError, RateLimitError, APIConnectionError
+
+from utils.logging import get_logger
+from utils.retry import retry_api_call
+from utils.security import InputValidator
+from utils.cache import cached
 import config
+
+logger = get_logger(__name__)
 
 
 class XAIClient:
-    """Client for xAI Grok API"""
+    """Client for xAI Grok API with retry logic and error handling"""
     
     def __init__(self, api_key: str):
+        """
+        Initialize xAI client
+        
+        Args:
+            api_key: xAI API key
+            
+        Raises:
+            ValueError: If API key is invalid
+        """
+        if not InputValidator.validate_api_key(api_key):
+            raise ValueError("Invalid API key format")
+        
         self.client = OpenAI(
             api_key=api_key,
-            base_url=config.XAI_BASE_URL
+            base_url=config.settings.xai_base_url
         )
-        self.model = config.XAI_MODEL
+        self.model = config.settings.xai_model
+        self.temperature = config.settings.xai_temperature
+        self.max_tokens = config.settings.xai_max_tokens
+        
+        logger.info("xAI client initialized", model=self.model)
     
-    def analyze_patterns(self, tool_name: str, patterns: List[Dict], reviews: List[Dict]) -> Dict:
+    @retry_api_call(max_attempts=3)
+    def analyze_patterns(
+        self,
+        tool_name: str,
+        patterns: List[Dict[str, Any]],
+        reviews: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
         Analyze complaint patterns and identify top pain points
-        Returns structured analysis
+        
+        Args:
+            tool_name: Name of the tool being analyzed
+            patterns: List of extracted patterns
+            reviews: List of review dictionaries
+            
+        Returns:
+            Dictionary with top_patterns key containing analysis results
         """
+        if not patterns:
+            logger.warning("No patterns provided for analysis", tool_name=tool_name)
+            return {"top_patterns": []}
+        
+        # Sanitize tool name
+        tool_name = InputValidator.sanitize_string(tool_name, max_length=100)
+        
         prompt = f"""You are analyzing 1-2 star reviews for {tool_name}, a B2B SaaS tool.
 
 Found {len(patterns)} complaint patterns from {len(reviews)} reviews.
@@ -51,42 +96,70 @@ Format as JSON:
 """
         
         try:
+            logger.info("Analyzing patterns", tool_name=tool_name, pattern_count=len(patterns))
+            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
             )
             
             result_text = response.choices[0].message.content
+            
+            if not result_text:
+                raise ValueError("Empty response from API")
+            
             # Try to extract JSON from response
-            # Find JSON block
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
+                result = json.loads(json_match.group())
+                logger.info("Pattern analysis complete", tool_name=tool_name)
+                return result
             else:
                 # Fallback: return structured text
+                logger.warning("Could not parse JSON, using fallback", tool_name=tool_name)
                 return {"top_patterns": self._parse_text_response(result_text)}
                 
-        except Exception as e:
-            print(f"Error in xAI analysis: {str(e)}")
+        except RateLimitError as e:
+            logger.error("Rate limit exceeded", error=str(e))
+            raise RuntimeError("API rate limit exceeded. Please try again later.") from e
+        except APIConnectionError as e:
+            logger.error("API connection error", error=str(e))
+            raise RuntimeError("Failed to connect to API. Please check your internet connection.") from e
+        except APIError as e:
+            logger.error("API error", error=str(e), status_code=getattr(e, 'status_code', None))
+            raise RuntimeError(f"API error: {str(e)}") from e
+        except json.JSONDecodeError as e:
+            logger.error("JSON decode error", error=str(e))
             # Fallback: return top patterns by frequency
-            return {
-                "top_patterns": [
-                    {
-                        "name": p["description"],
-                        "frequency": p["frequency"],
-                        "impact_reason": "High frequency complaint",
-                        "example": p["reviews"][0]["text"][:200] if p["reviews"] else ""
-                    }
-                    for p in patterns[:5]
-                ]
-            }
+            return self._fallback_analysis(patterns)
+        except Exception as e:
+            logger.error("Unexpected error in pattern analysis", error=str(e), exc_info=True)
+            return self._fallback_analysis(patterns)
     
-    def generate_product_ideas(self, tool_name: str, top_patterns: List[Dict]) -> List[Dict]:
+    @retry_api_call(max_attempts=3)
+    def generate_product_ideas(
+        self,
+        tool_name: str,
+        top_patterns: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """
         Generate product ideas for each top pattern
-        Returns list of product ideas
+        
+        Args:
+            tool_name: Name of the tool
+            top_patterns: List of top pain patterns
+            
+        Returns:
+            List of product idea dictionaries grouped by pattern
         """
+        if not top_patterns:
+            logger.warning("No patterns provided for idea generation", tool_name=tool_name)
+            return []
+        
+        tool_name = InputValidator.sanitize_string(tool_name, max_length=100)
+        
         prompt = f"""You are generating B2B SaaS product ideas based on complaints about {tool_name}.
 
 Top pain patterns:
@@ -125,27 +198,53 @@ Format as JSON:
 """
         
         try:
+            logger.info("Generating product ideas", tool_name=tool_name, pattern_count=len(top_patterns))
+            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+                temperature=0.7,  # Higher temperature for creativity
+                max_tokens=self.max_tokens
             )
             
             result_text = response.choices[0].message.content
             
+            if not result_text:
+                raise ValueError("Empty response from API")
+            
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group()).get("ideas", [])
+                result = json.loads(json_match.group())
+                ideas = result.get("ideas", [])
+                logger.info("Product ideas generated", tool_name=tool_name, idea_count=len(ideas))
+                return ideas
             else:
+                logger.warning("Could not parse JSON for ideas", tool_name=tool_name)
                 return self._parse_ideas_text(result_text)
                 
+        except RateLimitError as e:
+            logger.error("Rate limit exceeded", error=str(e))
+            raise RuntimeError("API rate limit exceeded. Please try again later.") from e
+        except APIConnectionError as e:
+            logger.error("API connection error", error=str(e))
+            raise RuntimeError("Failed to connect to API. Please check your internet connection.") from e
+        except APIError as e:
+            logger.error("API error", error=str(e))
+            raise RuntimeError(f"API error: {str(e)}") from e
         except Exception as e:
-            print(f"Error generating ideas: {str(e)}")
+            logger.error("Error generating ideas", error=str(e), exc_info=True)
             return []
     
-    def generate_roadmap(self, top_idea: Dict) -> Dict:
+    @retry_api_call(max_attempts=3)
+    def generate_roadmap(self, top_idea: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate 4-week solo founder roadmap for top idea
+        
+        Args:
+            top_idea: Product idea dictionary
+            
+        Returns:
+            Dictionary with week1-week4 keys containing roadmap details
         """
         prompt = f"""Create a detailed 4-week solo founder roadmap for this product idea:
 
@@ -172,44 +271,59 @@ Format as JSON:
 """
         
         try:
+            logger.info("Generating roadmap", idea_name=top_idea.get("name", "Unknown"))
+            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.5
+                temperature=0.5,
+                max_tokens=self.max_tokens
             )
             
             result_text = response.choices[0].message.content
             
+            if not result_text:
+                raise ValueError("Empty response from API")
+            
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
+                roadmap = json.loads(json_match.group())
+                logger.info("Roadmap generated successfully")
+                return roadmap
             else:
+                logger.warning("Could not parse JSON for roadmap")
                 return self._parse_roadmap_text(result_text)
                 
+        except RateLimitError as e:
+            logger.error("Rate limit exceeded", error=str(e))
+            raise RuntimeError("API rate limit exceeded. Please try again later.") from e
+        except APIConnectionError as e:
+            logger.error("API connection error", error=str(e))
+            raise RuntimeError("Failed to connect to API. Please check your internet connection.") from e
+        except APIError as e:
+            logger.error("API error", error=str(e))
+            raise RuntimeError(f"API error: {str(e)}") from e
         except Exception as e:
-            print(f"Error generating roadmap: {str(e)}")
-            return {
-                "week1": {"goal": "Validate demand", "tasks": ["Find 10 potential customers", "Send survey"]},
-                "week2": {"goal": "Build MVP", "tasks": ["Create landing page", "Set up waitlist"]},
-                "week3": {"goal": "Launch", "tasks": ["Post to Reddit/HN", "Email leads"]},
-                "week4": {"goal": "Iterate", "tasks": ["Collect feedback", "Implement changes"]}
-            }
+            logger.error("Error generating roadmap", error=str(e), exc_info=True)
+            return self._default_roadmap()
     
-    def _format_patterns(self, patterns: List[Dict]) -> str:
+    def _format_patterns(self, patterns: List[Dict[str, Any]]) -> str:
         """Format patterns for prompt"""
         return "\n".join([
-            f"- {p['description']} (Frequency: {p['frequency']})"
+            f"- {p.get('description', 'Unknown')} (Frequency: {p.get('frequency', 0)})"
             for p in patterns
         ])
     
-    def _format_top_patterns(self, patterns: List[Dict]) -> str:
+    def _format_top_patterns(self, patterns: List[Dict[str, Any]]) -> str:
         """Format top patterns for prompt"""
         return "\n".join([
-            f"{i+1}. {p['name']} (Frequency: {p['frequency']})\n   Impact: {p.get('impact_reason', 'N/A')}\n   Example: {p.get('example', 'N/A')[:150]}"
+            f"{i+1}. {p.get('name', 'Unknown')} (Frequency: {p.get('frequency', 0)})\n"
+            f"   Impact: {p.get('impact_reason', 'N/A')}\n"
+            f"   Example: {p.get('example', 'N/A')[:150]}"
             for i, p in enumerate(patterns)
         ])
     
-    def _format_idea(self, idea: Dict) -> str:
+    def _format_idea(self, idea: Dict[str, Any]) -> str:
         """Format idea for prompt"""
         return f"""
 Name: {idea.get('name', 'N/A')}
@@ -219,20 +333,70 @@ MVP Scope: {idea.get('mvp_scope', 'N/A')}
 Monetization: {idea.get('monetization', 'N/A')}
 """
     
-    def _parse_text_response(self, text: str) -> List[Dict]:
+    def _fallback_analysis(self, patterns: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Fallback analysis when API fails"""
+        return {
+            "top_patterns": [
+                {
+                    "name": p.get("description", "Unknown pattern"),
+                    "frequency": p.get("frequency", 0),
+                    "impact_reason": "High frequency complaint",
+                    "example": (
+                        p.get("reviews", [{}])[0].get("text", "")[:200]
+                        if p.get("reviews")
+                        else ""
+                    )
+                }
+                for p in patterns[:5]
+            ]
+        }
+    
+    def _parse_text_response(self, text: str) -> List[Dict[str, Any]]:
         """Fallback parser for text responses"""
-        # Simple parsing logic
+        # Simple parsing logic - could be enhanced
         return []
     
-    def _parse_ideas_text(self, text: str) -> List[Dict]:
+    def _parse_ideas_text(self, text: str) -> List[Dict[str, Any]]:
         """Fallback parser for ideas text"""
         return []
     
-    def _parse_roadmap_text(self, text: str) -> Dict:
+    def _parse_roadmap_text(self, text: str) -> Dict[str, Any]:
         """Fallback parser for roadmap text"""
+        return self._default_roadmap()
+    
+    def _default_roadmap(self) -> Dict[str, Any]:
+        """Default roadmap template"""
         return {
-            "week1": {"goal": "Validate", "tasks": []},
-            "week2": {"goal": "Build MVP", "tasks": []},
-            "week3": {"goal": "Launch", "tasks": []},
-            "week4": {"goal": "Iterate", "tasks": []}
+            "week1": {
+                "goal": "Validate demand",
+                "tasks": [
+                    "Find 10 potential customers",
+                    "Send survey",
+                    "Analyze responses"
+                ]
+            },
+            "week2": {
+                "goal": "Build MVP",
+                "tasks": [
+                    "Create landing page",
+                    "Set up waitlist",
+                    "Build core features"
+                ]
+            },
+            "week3": {
+                "goal": "Launch",
+                "tasks": [
+                    "Post to Reddit/HN",
+                    "Email leads",
+                    "Monitor feedback"
+                ]
+            },
+            "week4": {
+                "goal": "Iterate",
+                "tasks": [
+                    "Collect feedback",
+                    "Implement top changes",
+                    "Plan next iteration"
+                ]
+            }
         }

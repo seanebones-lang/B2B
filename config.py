@@ -1,10 +1,47 @@
 """
 Configuration file for B2B Complaint Analyzer
-Contains tool list, keywords, and settings
+Contains tool list, keywords, and settings with environment variable support
 """
 
+import os
+from typing import List, Dict
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """Application settings with environment variable support"""
+    
+    # Scraping settings
+    scrape_delay_min: int = int(os.getenv("SCRAPE_DELAY_MIN", "2"))
+    scrape_delay_max: int = int(os.getenv("SCRAPE_DELAY_MAX", "5"))
+    scrape_timeout: int = int(os.getenv("SCRAPE_TIMEOUT", "30"))
+    max_reviews_per_tool: int = int(os.getenv("MAX_REVIEWS_PER_TOOL", "30"))
+    
+    # Pattern detection thresholds
+    min_pattern_mentions: int = int(os.getenv("MIN_PATTERN_MENTIONS", "5"))
+    pattern_frequency_threshold: float = float(os.getenv("PATTERN_FREQUENCY_THRESHOLD", "0.15"))
+    
+    # xAI Grok settings
+    xai_base_url: str = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
+    xai_model: str = os.getenv("XAI_MODEL", "grok-beta")
+    xai_temperature: float = float(os.getenv("XAI_TEMPERATURE", "0.3"))
+    xai_max_tokens: int = int(os.getenv("XAI_MAX_TOKENS", "2000"))
+    
+    # Compliance settings
+    gdpr_enabled: bool = os.getenv("GDPR_ENABLED", "true").lower() == "true"
+    data_retention_days: int = int(os.getenv("DATA_RETENTION_DAYS", "90"))
+    enable_audit_logging: bool = os.getenv("ENABLE_AUDIT_LOGGING", "true").lower() == "true"
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
+
+
+# Initialize settings
+settings = Settings()
+
 # Top 10 B2B SaaS tools to analyze
-B2B_TOOLS = [
+B2B_TOOLS: List[Dict[str, str]] = [
     {"name": "Salesforce", "category": "CRM", "g2_slug": "salesforce", "capterra_id": "165"},
     {"name": "HubSpot", "category": "CRM/Marketing", "g2_slug": "hubspot", "capterra_id": "1007"},
     {"name": "Slack", "category": "Comms", "g2_slug": "slack", "capterra_id": "175"},
@@ -18,7 +55,7 @@ B2B_TOOLS = [
 ]
 
 # Pain point keywords/phrases for pattern extraction
-PAIN_KEYWORDS = {
+PAIN_KEYWORDS: Dict[str, List[str]] = {
     "missing_feature": [
         "doesn't have", "doesn't have", "missing", "lacks", "no way to", 
         "absent", "without", "does not have", "does not support"
@@ -33,16 +70,12 @@ PAIN_KEYWORDS = {
     ]
 }
 
-# Pattern detection thresholds
-MIN_PATTERN_MENTIONS = 5  # Minimum mentions to consider a pattern
-PATTERN_FREQUENCY_THRESHOLD = 0.15  # 15% of reviews
-
-# Scraping settings
-MAX_REVIEWS_PER_TOOL = 30
-SCRAPE_DELAY_MIN = 2  # seconds
-SCRAPE_DELAY_MAX = 5  # seconds
-REQUEST_TIMEOUT = 30  # seconds
-
-# xAI Grok settings
-XAI_BASE_URL = "https://api.x.ai/v1"
-XAI_MODEL = "grok-beta"
+# Backward compatibility exports
+MAX_REVIEWS_PER_TOOL = settings.max_reviews_per_tool
+SCRAPE_DELAY_MIN = settings.scrape_delay_min
+SCRAPE_DELAY_MAX = settings.scrape_delay_max
+REQUEST_TIMEOUT = settings.scrape_timeout
+MIN_PATTERN_MENTIONS = settings.min_pattern_mentions
+PATTERN_FREQUENCY_THRESHOLD = settings.pattern_frequency_threshold
+XAI_BASE_URL = settings.xai_base_url
+XAI_MODEL = settings.xai_model
