@@ -9,7 +9,6 @@ import hashlib
 import hmac
 
 from utils.logging import get_logger
-from utils.security import SecurityManager
 
 logger = get_logger(__name__)
 
@@ -29,7 +28,6 @@ class AuditLogger:
         
         # Get secret key for HMAC (tamper-proofing)
         self.secret_key = os.getenv("AUDIT_SECRET_KEY", "default-secret-change-in-production")
-        self.security_manager = SecurityManager()
         
         logger.info("Audit logger initialized", log_dir=str(self.audit_log_dir))
     
