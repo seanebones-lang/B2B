@@ -1,9 +1,10 @@
 """G2.com review scraper"""
 
+import re
+import requests
 from bs4 import BeautifulSoup
 from .base import BaseScraper
 from utils.logging import get_logger
-import re
 
 logger = get_logger(__name__)
 
