@@ -1,26 +1,32 @@
-"""Capterra.com review scraper"""
+"""Async Capterra.com review scraper"""
 
 from bs4 import BeautifulSoup
-from .base import BaseScraper
+from .base_async import BaseAsyncScraper
 from utils.logging import get_logger
 import re
 
 logger = get_logger(__name__)
 
 
-class CapterraScraper(BaseScraper):
-    """Scraper for Capterra.com reviews"""
+class CapterraScraperAsync(BaseAsyncScraper):
+    """Async scraper for Capterra.com reviews"""
     
-    def scrape_reviews(self, tool_name, tool_slug=None, tool_id=None, max_reviews=30):
+    async def scrape_reviews(
+        self,
+        tool_name: str,
+        tool_slug: str = None,
+        tool_id: str = None,
+        max_reviews: int = 30
+    ):
         """
-        Scrape 1-2 star reviews from Capterra
+        Scrape 1-2 star reviews from Capterra (async)
         URL pattern: https://www.capterra.com/p/{id}/{tool}/reviews/?rating=1-2&sort=most_recent
         """
         if not tool_id:
             # Try to find tool ID from tool name search
             search_url = f"https://www.capterra.com/search/{tool_name.replace(' ', '%20')}"
             try:
-                response = self._fetch(search_url)
+                response = await self._fetch(search_url)
                 soup = BeautifulSoup(response.content, 'html.parser')
                 # Look for product link
                 product_link = soup.find('a', href=re.compile(r'/p/\d+/'))
@@ -28,8 +34,8 @@ class CapterraScraper(BaseScraper):
                     match = re.search(r'/p/(\d+)/', product_link.get('href', ''))
                     if match:
                         tool_id = match.group(1)
-            except:
-                pass
+            except Exception as e:
+                logger.warning("Failed to find tool ID", tool_name=tool_name, error=str(e))
         
         if not tool_id:
             # Fallback: try common ID patterns or return empty
@@ -50,15 +56,21 @@ class CapterraScraper(BaseScraper):
                 param_str = "&".join([f"{k}={v}" for k, v in params.items()])
                 full_url = f"{url}?{param_str}"
                 
-                response = self._fetch(full_url)
+                response = await self._fetch(full_url)
                 soup = BeautifulSoup(response.content, 'html.parser')
                 
                 # Find review elements (Capterra structure)
-                review_elements = soup.find_all(['div', 'article'], class_=re.compile(r'review|rating|comment', re.I))
+                review_elements = soup.find_all(
+                    ['div', 'article'],
+                    class_=re.compile(r'review|rating|comment', re.I)
+                )
                 
                 if not review_elements:
                     # Try alternative selectors
-                    review_elements = soup.find_all('div', {'data-testid': re.compile(r'review', re.I)})
+                    review_elements = soup.find_all(
+                        'div',
+                        {'data-testid': re.compile(r'review', re.I)}
+                    )
                 
                 if not review_elements:
                     break
@@ -68,7 +80,10 @@ class CapterraScraper(BaseScraper):
                         break
                     
                     # Extract review text
-                    text_elem = element.find(['p', 'div'], class_=re.compile(r'text|content|review-text|body|comment', re.I))
+                    text_elem = element.find(
+                        ['p', 'div'],
+                        class_=re.compile(r'text|content|review-text|body|comment', re.I)
+                    )
                     if not text_elem:
                         text_elem = element.find('p')
                     
@@ -78,7 +93,10 @@ class CapterraScraper(BaseScraper):
                         continue
                     
                     # Extract rating
-                    rating_elem = element.find(['span', 'div'], class_=re.compile(r'rating|star', re.I))
+                    rating_elem = element.find(
+                        ['span', 'div'],
+                        class_=re.compile(r'rating|star', re.I)
+                    )
                     rating = None
                     if rating_elem:
                         rating_text = rating_elem.get_text(strip=True)
@@ -87,7 +105,10 @@ class CapterraScraper(BaseScraper):
                             rating = int(rating_match.group(1))
                     
                     # Extract date
-                    date_elem = element.find(['time', 'span', 'div'], class_=re.compile(r'date|time', re.I))
+                    date_elem = element.find(
+                        ['time', 'span', 'div'],
+                        class_=re.compile(r'date|time', re.I)
+                    )
                     date = None
                     if date_elem:
                         date = date_elem.get_text(strip=True)
@@ -109,7 +130,12 @@ class CapterraScraper(BaseScraper):
                 page += 1
                 
             except Exception as e:
-                logger.error("Error scraping Capterra page", page=page, tool_name=tool_name, error=str(e))
+                logger.error(
+                    "Error scraping Capterra page",
+                    page=page,
+                    tool_name=tool_name,
+                    error=str(e)
+                )
                 break
         
         return reviews[:max_reviews]

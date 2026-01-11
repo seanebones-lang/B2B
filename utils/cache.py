@@ -9,6 +9,12 @@ from datetime import datetime, timedelta
 from cachetools import TTLCache, LRUCache
 import os
 
+from utils.logging import get_logger
+from utils.monitoring import get_monitor
+
+logger = get_logger(__name__)
+monitor = get_monitor()
+
 
 class CacheManager:
     """Centralized cache management"""
@@ -16,15 +22,15 @@ class CacheManager:
     def __init__(
         self,
         max_size: int = 1000,
-        ttl_seconds: int = 3600,
+        ttl_seconds: int = 7200,  # Increased from 3600 to 7200 for better hit rate
         cache_type: str = "ttl"
     ):
         """
-        Initialize cache manager
+        Initialize cache manager with optimized defaults
         
         Args:
             max_size: Maximum number of cache entries
-            ttl_seconds: Time-to-live in seconds
+            ttl_seconds: Time-to-live in seconds (optimized: 7200 = 2 hours)
             cache_type: Type of cache ("ttl" or "lru")
         """
         self.ttl_seconds = int(os.getenv("CACHE_TTL_SECONDS", ttl_seconds))
@@ -34,10 +40,12 @@ class CacheManager:
             self.cache = TTLCache(maxsize=max_size, ttl=self.ttl_seconds)
         else:
             self.cache = LRUCache(maxsize=max_size)
+        
+        logger.info("Cache manager initialized", maxsize=max_size, ttl=self.ttl_seconds)
     
     def get(self, key: str) -> Optional[Any]:
         """
-        Get value from cache
+        Get value from cache with performance tracking
         
         Args:
             key: Cache key
@@ -49,8 +57,16 @@ class CacheManager:
             return None
         
         try:
-            return self.cache.get(key)
+            value = self.cache.get(key)
+            if value is not None:
+                logger.debug("Cache hit", key=key)
+                monitor.increment_counter("cache_hits", 1)
+            else:
+                logger.debug("Cache miss", key=key)
+                monitor.increment_counter("cache_misses", 1)
+            return value
         except KeyError:
+            monitor.increment_counter("cache_misses", 1)
             return None
     
     def set(self, key: str, value: Any) -> None:

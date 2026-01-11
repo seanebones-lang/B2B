@@ -1,19 +1,25 @@
-"""G2.com review scraper"""
+"""Async G2.com review scraper"""
 
 from bs4 import BeautifulSoup
-from .base import BaseScraper
+from .base_async import BaseAsyncScraper
 from utils.logging import get_logger
 import re
 
 logger = get_logger(__name__)
 
 
-class G2Scraper(BaseScraper):
-    """Scraper for G2.com reviews"""
+class G2ScraperAsync(BaseAsyncScraper):
+    """Async scraper for G2.com reviews"""
     
-    def scrape_reviews(self, tool_name, tool_slug=None, tool_id=None, max_reviews=30):
+    async def scrape_reviews(
+        self,
+        tool_name: str,
+        tool_slug: str = None,
+        tool_id: str = None,
+        max_reviews: int = 30
+    ):
         """
-        Scrape 1-2 star reviews from G2.com
+        Scrape 1-2 star reviews from G2.com (async)
         URL pattern: https://www.g2.com/products/{tool_slug}/reviews?rating=1&rating=2&sort=newest
         """
         if not tool_slug:
@@ -33,18 +39,28 @@ class G2Scraper(BaseScraper):
             
             try:
                 # Build URL with params
-                param_str = "&".join([f"{k}={v}" if not isinstance(v, list) else "&".join([f"{k}={item}" for item in v]) for k, v in params.items()])
+                param_str = "&".join([
+                    f"{k}={v}" if not isinstance(v, list)
+                    else "&".join([f"{k}={item}" for item in v])
+                    for k, v in params.items()
+                ])
                 full_url = f"{url}?{param_str}"
                 
-                response = self._fetch(full_url)
+                response = await self._fetch(full_url)
                 soup = BeautifulSoup(response.content, 'html.parser')
                 
                 # Find review elements (G2 structure may vary)
-                review_elements = soup.find_all(['div', 'article'], class_=re.compile(r'review|rating', re.I))
+                review_elements = soup.find_all(
+                    ['div', 'article'],
+                    class_=re.compile(r'review|rating', re.I)
+                )
                 
                 if not review_elements:
                     # Try alternative selectors
-                    review_elements = soup.find_all('div', {'data-testid': re.compile(r'review', re.I)})
+                    review_elements = soup.find_all(
+                        'div',
+                        {'data-testid': re.compile(r'review', re.I)}
+                    )
                 
                 if not review_elements:
                     # If no reviews found, break
@@ -55,7 +71,10 @@ class G2Scraper(BaseScraper):
                         break
                     
                     # Extract review text
-                    text_elem = element.find(['p', 'div'], class_=re.compile(r'text|content|review-text|body', re.I))
+                    text_elem = element.find(
+                        ['p', 'div'],
+                        class_=re.compile(r'text|content|review-text|body', re.I)
+                    )
                     if not text_elem:
                         text_elem = element.find('p')
                     
@@ -65,7 +84,10 @@ class G2Scraper(BaseScraper):
                         continue
                     
                     # Extract rating
-                    rating_elem = element.find(['span', 'div'], class_=re.compile(r'rating|star', re.I))
+                    rating_elem = element.find(
+                        ['span', 'div'],
+                        class_=re.compile(r'rating|star', re.I)
+                    )
                     rating = None
                     if rating_elem:
                         rating_text = rating_elem.get_text(strip=True)
@@ -74,7 +96,10 @@ class G2Scraper(BaseScraper):
                             rating = int(rating_match.group(1))
                     
                     # Extract date
-                    date_elem = element.find(['time', 'span', 'div'], class_=re.compile(r'date|time', re.I))
+                    date_elem = element.find(
+                        ['time', 'span', 'div'],
+                        class_=re.compile(r'date|time', re.I)
+                    )
                     date = None
                     if date_elem:
                         date = date_elem.get_text(strip=True)
@@ -96,7 +121,12 @@ class G2Scraper(BaseScraper):
                 page += 1
                 
             except Exception as e:
-                logger.error("Error scraping G2 page", page=page, tool_name=tool_name, error=str(e))
+                logger.error(
+                    "Error scraping G2 page",
+                    page=page,
+                    tool_name=tool_name,
+                    error=str(e)
+                )
                 break
         
         return reviews[:max_reviews]

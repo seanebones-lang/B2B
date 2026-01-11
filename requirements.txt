@@ -47,6 +47,12 @@ mypy>=1.7.0
 types-requests>=2.31.0
 types-beautifulsoup4>=4.12.0
 
+# Security
+cryptography>=41.0.0
+
+# System monitoring (for energy efficiency)
+psutil>=5.9.0
+
 # Documentation (optional)
 sphinx>=7.2.0
 sphinx-rtd-theme>=2.0.0

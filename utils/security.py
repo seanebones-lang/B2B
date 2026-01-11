@@ -169,14 +169,20 @@ class SecurityManager:
             API key if found and valid, None otherwise
         """
         api_key = None
+        secrets_manager = get_secrets_manager()
         
         if source == "streamlit":
             try:
-                api_key = st.secrets.get("XAI_API_KEY") or os.getenv("XAI_API_KEY")
+                encrypted_key = st.secrets.get("XAI_API_KEY_ENCRYPTED")
+                if encrypted_key:
+                    # Try to decrypt if encrypted
+                    api_key = secrets_manager.decrypt(encrypted_key)
+                else:
+                    api_key = st.secrets.get("XAI_API_KEY") or os.getenv("XAI_API_KEY")
             except Exception:
-                api_key = os.getenv("XAI_API_KEY")
+                api_key = secrets_manager.get_secret("XAI_API_KEY", encrypted=False)
         else:
-            api_key = os.getenv("XAI_API_KEY")
+            api_key = secrets_manager.get_secret("XAI_API_KEY", encrypted=False)
         
         if api_key and InputValidator.validate_api_key(api_key):
             return api_key

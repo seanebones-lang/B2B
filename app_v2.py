@@ -14,6 +14,13 @@ from utils.logging import get_logger
 from utils.database import get_db_manager
 from utils.cache import CacheManager
 from utils.rate_limiter import RateLimiter
+from utils.async_helpers import scrape_tool_sync
+from utils.monitoring import monitor_performance
+from utils.accessibility import get_aria_labels, get_accessibility_attributes
+from utils.csrf import get_csrf_protection
+from utils.performance_applications import get_perf_applications
+from utils.bias_detection import get_bias_detector, get_explainability_provider
+from utils.energy_efficiency import get_energy_tracker
 import config
 
 # Initialize logging
@@ -43,6 +50,17 @@ if "session_id" not in st.session_state:
     import uuid
     st.session_state.session_id = str(uuid.uuid4())
 
+# Initialize CSRF protection
+csrf_protection = get_csrf_protection()
+csrf_token = csrf_protection.get_token_for_session(st.session_state.session_id)
+
+# Apply performance optimizations on startup
+if "perf_optimizations_applied" not in st.session_state:
+    perf_applications = get_perf_applications()
+    optimizations = perf_applications.apply_all_optimizations()
+    st.session_state.perf_optimizations_applied = True
+    logger.info("Performance optimizations applied", optimizations=optimizations)
+
 
 def main():
     """Main application entry point"""
@@ -53,12 +71,15 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        # xAI API Key with security validation
+        # xAI API Key with security validation and accessibility
+        aria_labels = get_aria_labels()
         api_key_input = st.text_input(
             "xAI API Key",
             type="password",
             help="Get your API key from https://x.ai/api",
-            value=security_manager.get_api_key("streamlit") or ""
+            value=security_manager.get_api_key("streamlit") or "",
+            key="api_key_input",
+            label_visibility="visible"
         )
         
         if api_key_input:
@@ -85,14 +106,16 @@ def main():
         
         st.divider()
         
-        # Tool selection with validation
+        # Tool selection with validation and accessibility
         st.header("📊 Select Tools")
         tool_names = [tool["name"] for tool in config.B2B_TOOLS]
         selected_tools_raw = st.multiselect(
             "Choose B2B tools to analyze",
             tool_names,
             default=tool_names[:3] if len(tool_names) >= 3 else tool_names,
-            help="Select 1-3 tools for best performance"
+            help="Select 1-3 tools for best performance",
+            key="tool_select",
+            label_visibility="visible"
         )
         
         # Sanitize tool selection
@@ -115,12 +138,14 @@ def main():
         
         st.divider()
         
-        # Run analysis button with rate limiting
+        # Run analysis button with rate limiting and accessibility
         run_analysis = st.button(
             "🚀 Run Analysis",
             type="primary",
             use_container_width=True,
-            disabled=not st.session_state.xai_client or not selected_tools
+            disabled=not st.session_state.xai_client or not selected_tools,
+            key="run_analysis",
+            help="Press Ctrl+Enter or Cmd+Enter to run analysis"
         )
         
         if not st.session_state.xai_client:
@@ -197,10 +222,6 @@ def run_full_analysis(selected_tools: List[str], use_semantic: bool = True):
     current_step = 0
     
     try:
-        # Initialize scrapers
-        g2_scraper = G2Scraper()
-        capterra_scraper = CapterraScraper()
-        
         # Use semantic extractor if available and requested
         if use_semantic:
             try:
@@ -212,7 +233,7 @@ def run_full_analysis(selected_tools: List[str], use_semantic: bool = True):
         else:
             pattern_extractor = PatternExtractor()
         
-        # Process each tool
+        # Process each tool (using async scrapers for better performance)
         for tool_name in selected_tools:
             tool_config = next((t for t in config.B2B_TOOLS if t["name"] == tool_name), None)
             if not tool_config:
@@ -232,38 +253,35 @@ def run_full_analysis(selected_tools: List[str], use_semantic: bool = True):
                 reviews = cached_reviews
                 st.info(f"  ✓ Using cached reviews for {tool_name}")
             else:
-                # Scrape reviews
-                reviews = []
-                
-                # Try G2
+                # Scrape reviews using async scrapers (parallel G2 + Capterra)
                 try:
-                    status_text.text(f"  → Scraping G2.com...")
-                    g2_reviews = g2_scraper.scrape_reviews(
+                    status_text.text(f"  → Scraping G2.com and Capterra in parallel...")
+                    reviews = scrape_tool_sync(
                         tool_name,
-                        tool_slug=tool_config.get("g2_slug"),
+                        tool_config,
                         max_reviews=config.settings.max_reviews_per_tool
                     )
-                    reviews.extend(g2_reviews)
-                    logger.info("G2 scraping complete", tool_name=tool_name, count=len(g2_reviews))
-                    st.success(f"  ✓ Found {len(g2_reviews)} reviews from G2")
-                except Exception as e:
-                    logger.error("G2 scraping failed", tool_name=tool_name, error=str(e))
-                    st.warning(f"  ⚠️ G2 scraping failed: {str(e)}")
-                
-                # Try Capterra
-                try:
-                    status_text.text(f"  → Scraping Capterra...")
-                    capterra_reviews = capterra_scraper.scrape_reviews(
-                        tool_name,
-                        tool_id=tool_config.get("capterra_id"),
-                        max_reviews=config.settings.max_reviews_per_tool
+                    
+                    g2_count = sum(1 for r in reviews if r.get("source") == "G2")
+                    capterra_count = sum(1 for r in reviews if r.get("source") == "Capterra")
+                    
+                    logger.info(
+                        "Async scraping complete",
+                        tool_name=tool_name,
+                        g2_count=g2_count,
+                        capterra_count=capterra_count,
+                        total=len(reviews)
                     )
-                    reviews.extend(capterra_reviews)
-                    logger.info("Capterra scraping complete", tool_name=tool_name, count=len(capterra_reviews))
-                    st.success(f"  ✓ Found {len(capterra_reviews)} reviews from Capterra")
+                    
+                    if g2_count > 0:
+                        st.success(f"  ✓ Found {g2_count} reviews from G2")
+                    if capterra_count > 0:
+                        st.success(f"  ✓ Found {capterra_count} reviews from Capterra")
+                    
                 except Exception as e:
-                    logger.error("Capterra scraping failed", tool_name=tool_name, error=str(e))
-                    st.warning(f"  ⚠️ Capterra scraping failed: {str(e)}")
+                    logger.error("Async scraping failed", tool_name=tool_name, error=str(e))
+                    st.warning(f"  ⚠️ Scraping failed: {str(e)}")
+                    reviews = []
                 
                 # Cache reviews
                 if reviews:
@@ -308,6 +326,23 @@ def run_full_analysis(selected_tools: List[str], use_semantic: bool = True):
                             ai_analysis["top_patterns"]
                         )
                         ai_analysis["product_ideas"] = ideas
+                        
+                        # Bias detection and explainability
+                        bias_detector = get_bias_detector()
+                        explainability = get_explainability_provider()
+                        
+                        # Check for bias in AI output
+                        bias_analysis = bias_detector.analyze_ai_output(ai_analysis)
+                        if bias_analysis["has_bias"]:
+                            logger.warning("Bias detected in AI output", tool_name=tool_name, bias_analysis=bias_analysis)
+                            ai_analysis["bias_warning"] = bias_analysis
+                        
+                        # Generate explainability report
+                        explainability_report = explainability.generate_explainability_report({
+                            "pattern_results": pattern_results,
+                            "ai_analysis": ai_analysis
+                        })
+                        ai_analysis["explainability"] = explainability_report
                     
                     logger.info("AI analysis complete", tool_name=tool_name)
                 except Exception as e:

@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 import json
 
 from utils.logging import get_logger
+from utils.database_encryption import get_db_encryption
 
 logger = get_logger(__name__)
 
@@ -23,11 +24,11 @@ class Review(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     tool_name = Column(String(100), nullable=False, index=True)
-    text = Column(Text, nullable=False)
-    rating = Column(Integer, nullable=False)
-    date = Column(String(50))
-    source = Column(String(50), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    text = Column(Text, nullable=False, index=False)  # Don't index large text fields
+    rating = Column(Integer, nullable=False, index=True)  # Index for filtering
+    date = Column(String(50), index=True)  # Index for date queries
+    source = Column(String(50), nullable=False, index=True)  # Index for source filtering
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)  # Index for sorting
     metadata = Column(JSON)
 
 
@@ -85,21 +86,28 @@ class DatabaseManager:
         """Get database session"""
         return self.SessionLocal()
     
-    def save_reviews(self, tool_name: str, reviews: List[Dict[str, Any]]) -> int:
+    def save_reviews(self, tool_name: str, reviews: List[Dict[str, Any]], encrypt: bool = True) -> int:
         """
-        Save reviews to database
+        Save reviews to database with optional encryption
         
         Args:
             tool_name: Name of the tool
             reviews: List of review dictionaries
+            encrypt: Whether to encrypt sensitive fields
             
         Returns:
             Number of reviews saved
         """
         session = self.get_session()
+        db_encryption = get_db_encryption() if encrypt else None
+        
         try:
             count = 0
             for review_data in reviews:
+                # Encrypt sensitive fields if enabled
+                if encrypt and db_encryption:
+                    review_data = db_encryption.encrypt_review(review_data)
+                
                 review = Review(
                     tool_name=tool_name,
                     text=review_data.get("text", ""),
@@ -112,7 +120,7 @@ class DatabaseManager:
                 count += 1
             
             session.commit()
-            logger.info("Reviews saved", tool_name=tool_name, count=count)
+            logger.info("Reviews saved", tool_name=tool_name, count=count, encrypted=encrypt)
             return count
         except Exception as e:
             session.rollback()
@@ -121,18 +129,21 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def get_reviews(self, tool_name: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_reviews(self, tool_name: Optional[str] = None, limit: int = 100, decrypt: bool = True) -> List[Dict[str, Any]]:
         """
-        Retrieve reviews from database
+        Retrieve reviews from database with optional decryption
         
         Args:
             tool_name: Filter by tool name (optional)
             limit: Maximum number of reviews to return
+            decrypt: Whether to decrypt encrypted fields
             
         Returns:
             List of review dictionaries
         """
         session = self.get_session()
+        db_encryption = get_db_encryption() if decrypt else None
+        
         try:
             query = session.query(Review)
             if tool_name:
@@ -140,16 +151,31 @@ class DatabaseManager:
             
             reviews = query.order_by(Review.created_at.desc()).limit(limit).all()
             
-            return [
-                {
+            result = []
+            for r in reviews:
+                review_dict = {
                     "text": r.text,
                     "rating": r.rating,
                     "date": r.date,
                     "source": r.source,
                     "metadata": r.metadata
                 }
-                for r in reviews
-            ]
+                
+                # Decrypt if enabled and data appears encrypted
+                if decrypt and db_encryption:
+                    # Check if text looks encrypted (base64 pattern)
+                    if r.text and len(r.text) > 20 and not r.text.startswith(" "):
+                        try:
+                            review_dict = db_encryption.decrypt_review({
+                                **review_dict,
+                                "_encrypted": True
+                            })
+                        except Exception as e:
+                            logger.warning("Decryption failed, returning as-is", error=str(e))
+                
+                result.append(review_dict)
+            
+            return result
         finally:
             session.close()
     

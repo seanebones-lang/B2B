@@ -6,6 +6,7 @@ import os
 
 from utils.database import get_db_manager
 from utils.logging import get_logger
+from utils.monitoring import get_monitor
 
 logger = get_logger(__name__)
 
@@ -142,14 +143,15 @@ class HealthChecker:
     
     def get_metrics(self) -> Dict[str, Any]:
         """
-        Get system metrics
+        Get system metrics including performance data
         
         Returns:
             Dictionary with system metrics
         """
         metrics = {
             "timestamp": datetime.utcnow().isoformat(),
-            "database": {}
+            "database": {},
+            "performance": {}
         }
         
         try:
@@ -171,6 +173,15 @@ class HealthChecker:
         except Exception as e:
             logger.error("Failed to get metrics", error=str(e))
             metrics["database"]["error"] = str(e)
+        
+        # Add performance metrics
+        try:
+            monitor = get_monitor()
+            performance_stats = monitor.get_stats()
+            metrics["performance"] = performance_stats
+        except Exception as e:
+            logger.warning("Failed to get performance metrics", error=str(e))
+            metrics["performance"]["error"] = str(e)
         
         return metrics
 
