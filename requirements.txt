@@ -1,0 +1,66 @@
+# Core dependencies
+streamlit>=1.28.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+fake-useragent>=1.4.0
+openai>=1.3.0
+pandas>=2.1.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+lxml>=4.9.0
+
+# Configuration and settings
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Retry and resilience
+tenacity>=8.2.0
+
+# Caching
+cachetools>=5.3.0
+
+# Logging
+structlog>=23.2.0
+
+# Modern NLP (for future enhancements)
+sentence-transformers>=2.3.0
+
+# Async support (for future enhancements)
+aiohttp>=3.9.0
+httpx>=0.25.0
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+pytest-benchmark>=4.0.0
+locust>=2.17.0
+
+# Code quality
+black>=23.12.0
+ruff>=0.1.0
+mypy>=1.7.0
+types-requests>=2.31.0
+types-beautifulsoup4>=4.12.0
+
+# Security
+cryptography>=41.0.0
+
+# System monitoring (for energy efficiency)
+psutil>=5.9.0
+
+# Documentation (optional)
+sphinx>=7.2.0
+sphinx-rtd-theme>=2.0.0
+
+# REST API
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+httpx>=0.25.0  # For TestClient
