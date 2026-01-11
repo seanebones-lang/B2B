@@ -170,7 +170,7 @@ def main():
         run_analysis = st.button(
             "🚀 Run Analysis",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not api_key_valid or not selected_tools,
             key="run_analysis",
             help="Press Ctrl+Enter or Cmd+Enter to run analysis"
@@ -238,7 +238,7 @@ def show_instructions():
         {"Tool": tool["name"], "Category": tool["category"]}
         for tool in config.B2B_TOOLS
     ])
-    st.dataframe(tools_df, use_container_width=True, hide_index=True)
+    st.dataframe(tools_df, width="stretch", hide_index=True)
 
 
 def run_full_analysis(selected_tools: List[str], use_semantic: bool = True):
@@ -553,7 +553,7 @@ def display_per_tool(results: Dict):
                 }
                 for p in pattern_results["patterns"][:5]
             ])
-            st.dataframe(patterns_df, use_container_width=True, hide_index=True)
+            st.dataframe(patterns_df, width="stretch", hide_index=True)
         
         if ai_analysis.get("top_patterns"):
             st.subheader("AI Analysis - Top Patterns")

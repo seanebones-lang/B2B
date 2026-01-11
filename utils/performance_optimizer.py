@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional
 from collections import defaultdict
 import time
 
-from utils.monitoring import get_monitor
+from utils.monitoring import get_monitoring
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,7 +14,7 @@ class PerformanceOptimizer:
     """Performance optimization based on monitoring data"""
     
     def __init__(self):
-        self.monitor = get_monitor()
+        self.monitor = get_monitoring()
         self.optimization_suggestions = []
     
     def analyze_performance(self) -> Dict[str, Any]:

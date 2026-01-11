@@ -10,10 +10,10 @@ from cachetools import TTLCache, LRUCache
 import os
 
 from utils.logging import get_logger
-from utils.monitoring import get_monitor
+from utils.monitoring import get_monitoring
 
 logger = get_logger(__name__)
-monitor = get_monitor()
+monitor = get_monitoring()
 
 T = TypeVar('T')
 
@@ -62,13 +62,19 @@ class CacheManager:
             value = self.cache.get(key)
             if value is not None:
                 logger.debug("Cache hit", key=key)
-                monitor.increment_counter("cache_hits", 1)
+                # Track cache hit if monitoring is available
+                if hasattr(monitor, 'increment_counter'):
+                    monitor.increment_counter("cache_hits", 1)
             else:
                 logger.debug("Cache miss", key=key)
-                monitor.increment_counter("cache_misses", 1)
+                # Track cache miss if monitoring is available
+                if hasattr(monitor, 'increment_counter'):
+                    monitor.increment_counter("cache_misses", 1)
             return value
         except KeyError:
-            monitor.increment_counter("cache_misses", 1)
+            # Track cache miss if monitoring is available
+            if hasattr(monitor, 'increment_counter'):
+                monitor.increment_counter("cache_misses", 1)
             return None
     
     def set(self, key: str, value: Any) -> None:

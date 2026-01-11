@@ -6,7 +6,7 @@ import os
 
 from utils.database import get_db_manager
 from utils.logging import get_logger
-from utils.monitoring import get_monitor
+from utils.monitoring import get_monitoring
 
 logger = get_logger(__name__)
 
@@ -176,7 +176,7 @@ class HealthChecker:
         
         # Add performance metrics
         try:
-            monitor = get_monitor()
+            monitor = get_monitoring()
             performance_stats = monitor.get_stats()
             metrics["performance"] = performance_stats
         except Exception as e:
