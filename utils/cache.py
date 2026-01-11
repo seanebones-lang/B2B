@@ -3,7 +3,7 @@
 import time
 import hashlib
 import json
-from typing import Any, Optional, Callable
+from typing import Any, Optional, Callable, TypeVar
 from functools import wraps
 from datetime import datetime, timedelta
 from cachetools import TTLCache, LRUCache
@@ -14,6 +14,8 @@ from utils.monitoring import get_monitor
 
 logger = get_logger(__name__)
 monitor = get_monitor()
+
+T = TypeVar('T')
 
 
 class CacheManager:
@@ -124,7 +126,7 @@ class CacheManager:
 _cache_manager = CacheManager()
 
 
-def cached(ttl_seconds: Optional[int] = None, key_func: Optional[Callable] = None):
+def cached(ttl_seconds: Optional[int] = None, key_func: Optional[Callable[..., str]] = None) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator to cache function results
     
@@ -137,7 +139,7 @@ def cached(ttl_seconds: Optional[int] = None, key_func: Optional[Callable] = Non
         def expensive_function(arg1, arg2):
             return expensive_computation(arg1, arg2)
     """
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Generate cache key

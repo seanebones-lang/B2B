@@ -2,7 +2,7 @@
 
 import re
 from collections import defaultdict
-from typing import List, Dict
+from typing import List, Dict, Any, Optional
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 import numpy as np
@@ -17,7 +17,7 @@ class PatternExtractor:
         self.min_mentions = config.MIN_PATTERN_MENTIONS
         self.frequency_threshold = config.PATTERN_FREQUENCY_THRESHOLD
     
-    def extract_patterns(self, reviews: List[Dict]) -> Dict:
+    def extract_patterns(self, reviews: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Extract pain patterns from reviews
         Returns dict with patterns, frequencies, and categorized complaints
@@ -44,7 +44,7 @@ class PatternExtractor:
             "categorized_complaints": categorized
         }
     
-    def _categorize_complaints(self, reviews: List[Dict]) -> Dict:
+    def _categorize_complaints(self, reviews: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """Categorize complaints by keyword type"""
         categorized = {
             "missing_feature": [],

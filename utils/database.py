@@ -65,11 +65,18 @@ class DatabaseManager:
             db_path = Path(self.database_url.replace("sqlite:///", ""))
             db_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Use StaticPool for SQLite to handle concurrent access
+            # Use QueuePool for better concurrent access (replaces StaticPool)
+            # QueuePool allows multiple connections with proper pooling
+            from sqlalchemy.pool import QueuePool
+            
             self.engine = create_engine(
                 self.database_url,
                 connect_args={"check_same_thread": False},
-                poolclass=StaticPool
+                poolclass=QueuePool,
+                pool_size=10,  # Allow up to 10 concurrent connections
+                max_overflow=20,  # Allow up to 20 overflow connections
+                pool_pre_ping=True,  # Verify connections before use
+                pool_recycle=3600  # Recycle connections after 1 hour
             )
         else:
             self.engine = create_engine(self.database_url)

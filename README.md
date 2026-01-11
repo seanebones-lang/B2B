@@ -23,6 +23,8 @@ The system treats every complaint as a "pre-paid invoice" from future customers,
 
 ## Quick Start
 
+> **New to the project?** Check out the [Onboarding Guide](ONBOARDING.md) for a comprehensive introduction!
+
 ### Prerequisites
 
 - Python 3.8+
@@ -57,13 +59,24 @@ The app will open in your browser at `http://localhost:8501`
 
 ### Deployment to Streamlit Cloud
 
+**Quick Deploy:**
+```bash
+./streamlit_deploy.sh
+```
+
+**Manual Steps:**
 1. Push your code to GitHub
-2. Go to [Streamlit Cloud](https://streamlit.io/cloud)
+2. Go to [Streamlit Cloud](https://share.streamlit.io)
 3. Click "New app"
 4. Connect your GitHub repository
-5. Set the main file path to `app.py`
-6. Add your `XAI_API_KEY` in the secrets section
+5. Set the main file path to `app.py` (or `app_v2.py` for enhanced version)
+6. Add your `XAI_API_KEY` in the secrets section:
+   ```toml
+   XAI_API_KEY = "your-xai-api-key-here"
+   ```
 7. Deploy!
+
+**For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)**
 
 ## Usage
 
@@ -167,6 +180,21 @@ Contributions welcome! Areas for improvement:
 - Additional export formats
 - UI/UX enhancements
 
+## Legal
+
+**© 2026 NextEleven Studios. S. McDonnell, CTO. All Rights Reserved.**
+
+**No unauthorized viewing or use permitted under penalty of law.**
+
+For complete legal documentation, see the [legal/](legal/) directory:
+
+- [Privacy Policy](legal/PRIVACY_POLICY.md) - Data collection and privacy practices
+- [Terms of Use](legal/TERMS_OF_USE.md) - Terms governing use of the Service
+- [End User License Agreement (EULA)](legal/EULA.md) - Software license terms
+- [Copyright Notice](legal/COPYRIGHT.md) - Copyright ownership and protection
+- [Trademark Notice](legal/TRADEMARK.md) - Trademark ownership and usage
+- [Legal Notice](legal/LEGAL.md) - Comprehensive legal information
+
 ## License
 
 See LICENSE file for details.
@@ -174,3 +202,5 @@ See LICENSE file for details.
 ## Disclaimer
 
 This tool is for research and ideation purposes. Always respect website terms of service and rate limits when scraping. Use responsibly.
+
+**By using this software, you agree to be bound by the Terms of Use, EULA, and Privacy Policy.**

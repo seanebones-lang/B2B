@@ -46,6 +46,8 @@ if "analysis_results" not in st.session_state:
     st.session_state.analysis_results = {}
 if "xai_client" not in st.session_state:
     st.session_state.xai_client = None
+if "api_key_configured" not in st.session_state:
+    st.session_state.api_key_configured = False
 if "session_id" not in st.session_state:
     import uuid
     st.session_state.session_id = str(uuid.uuid4())
@@ -69,30 +71,47 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("⚙️ Configuration")
+        # API Key Section - Prominent and dedicated
+        st.header("🔑 xAI API Key")
+        st.markdown("""
+        <div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 10px;'>
+        <small>Enter your xAI API key to enable AI-powered analysis. 
+        Get your key from <a href='https://x.ai/api' target='_blank'>x.ai/api</a></small>
+        </div>
+        """, unsafe_allow_html=True)
         
         # xAI API Key with security validation and accessibility
         aria_labels = get_aria_labels()
         api_key_input = st.text_input(
-            "xAI API Key",
+            "API Key",
             type="password",
-            help="Get your API key from https://x.ai/api",
+            help="Enter your xAI API key (starts with 'xai-' or similar)",
+            placeholder="xai-your-api-key-here",
             value=security_manager.get_api_key("streamlit") or "",
             key="api_key_input",
             label_visibility="visible"
         )
         
+        # API Key Status with detailed feedback
         if api_key_input:
             try:
                 # Validate and sanitize API key
                 if InputValidator.validate_api_key(api_key_input):
                     st.session_state.xai_client = XAIClient(api_key_input)
-                    st.success("✅ API key configured")
+                    st.success("✅ API key configured and validated")
+                    st.session_state.api_key_configured = True
                     logger.info("API key configured successfully")
                 else:
-                    st.error("❌ Invalid API key format")
+                    st.error("❌ Invalid API key format. Please check your key.")
+                    st.info("💡 API keys are typically 40+ characters long")
+                    st.session_state.api_key_configured = False
+            except ValueError as e:
+                st.error(f"❌ Invalid API key: {str(e)}")
+                st.session_state.api_key_configured = False
+                logger.error("Invalid API key format", error=str(e))
             except Exception as e:
-                st.error(f"Error initializing xAI client: {str(e)}")
+                st.error(f"❌ Error initializing client: {str(e)}")
+                st.session_state.api_key_configured = False
                 logger.error("Failed to initialize xAI client", error=str(e))
         else:
             # Try to get from environment
@@ -100,11 +119,19 @@ def main():
             if api_key:
                 try:
                     st.session_state.xai_client = XAIClient(api_key)
-                    st.info("✅ Using API key from environment")
+                    st.info("✅ Using API key from environment/secrets")
+                    st.session_state.api_key_configured = True
+                    logger.info("Using API key from environment")
                 except Exception as e:
+                    st.session_state.api_key_configured = False
                     logger.warning("Failed to use environment API key", error=str(e))
+            else:
+                st.info("ℹ️ Please enter your xAI API key above to get started")
+                st.session_state.api_key_configured = False
         
         st.divider()
+        
+        st.header("⚙️ Configuration")
         
         # Tool selection with validation and accessibility
         st.header("📊 Select Tools")
@@ -139,17 +166,18 @@ def main():
         st.divider()
         
         # Run analysis button with rate limiting and accessibility
+        api_key_valid = st.session_state.get("api_key_configured", False)
         run_analysis = st.button(
             "🚀 Run Analysis",
             type="primary",
             use_container_width=True,
-            disabled=not st.session_state.xai_client or not selected_tools,
+            disabled=not api_key_valid or not selected_tools,
             key="run_analysis",
             help="Press Ctrl+Enter or Cmd+Enter to run analysis"
         )
         
-        if not st.session_state.xai_client:
-            st.warning("⚠️ Please enter xAI API key")
+        if not api_key_valid:
+            st.warning("⚠️ API key required to run analysis")
         if not selected_tools:
             st.warning("⚠️ Please select at least one tool")
         
@@ -160,7 +188,8 @@ def main():
                 run_analysis = False
     
     # Main content area
-    if run_analysis and st.session_state.xai_client and selected_tools:
+    api_key_valid = st.session_state.get("api_key_configured", False)
+    if run_analysis and api_key_valid and selected_tools:
         try:
             run_full_analysis(selected_tools, use_semantic=use_semantic)
         except Exception as e:
@@ -188,10 +217,10 @@ def show_instructions():
     st.markdown("""
     ### How to Use
     
-    1. **Enter xAI API Key**: Get your key from [x.ai/api](https://x.ai/api)
-    2. **Select Tools**: Choose 1-3 B2B SaaS tools to analyze
-    3. **Choose Analysis Method**: Select semantic analysis for better results
-    4. **Run Analysis**: Click the button to scrape reviews and generate insights
+    1. **Enter xAI API Key**: Use the sidebar (🔑 xAI API Key section) to enter your key from [x.ai/api](https://x.ai/api)
+    2. **Select Tools**: Choose 1-3 B2B SaaS tools to analyze from the dropdown
+    3. **Choose Analysis Method**: Select semantic analysis for better results (optional)
+    4. **Run Analysis**: Click the "🚀 Run Analysis" button to scrape reviews and generate insights
     
     ### What This Tool Does
     

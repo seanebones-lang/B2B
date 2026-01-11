@@ -4,6 +4,7 @@ Welcome to the B2B Complaint Analyzer documentation.
 
 ## Documentation Structure
 
+- **[Onboarding Guide](../ONBOARDING.md)** - Start here! Complete guide for new users and developers
 - [API Reference](api.md) - Complete API documentation
 - [User Guide](user_guide.md) - How to use the application
 - [Developer Guide](developer_guide.md) - Development setup and guidelines

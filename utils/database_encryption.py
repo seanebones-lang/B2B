@@ -1,5 +1,6 @@
 """Database field encryption utilities"""
 
+import secrets
 from typing import Optional, Dict, Any
 from cryptography.fernet import Fernet
 import base64
@@ -24,15 +25,30 @@ class DatabaseEncryption:
         secrets_manager = get_secrets_manager()
         
         if encryption_key:
-            # Derive Fernet key from password
+            # Derive Fernet key from password using secure salt
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
             from cryptography.hazmat.backends import default_backend
             
+            # Get salt from environment or generate a secure one
+            salt_env = os.getenv("DB_ENCRYPTION_SALT")
+            if salt_env:
+                try:
+                    salt = base64.urlsafe_b64decode(salt_env.encode())
+                except Exception:
+                    logger.warning("Invalid salt in DB_ENCRYPTION_SALT, generating new one")
+                    salt = secrets.token_bytes(16)
+            else:
+                salt = secrets.token_bytes(16)
+                logger.warning(
+                    "No DB_ENCRYPTION_SALT found, using random salt. "
+                    "For production, set DB_ENCRYPTION_SALT environment variable with a base64-encoded 16-byte salt."
+                )
+            
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=32,
-                salt=b'db_encryption_salt',  # In production, use random salt stored securely
+                salt=salt,
                 iterations=100000,
                 backend=default_backend()
             )
@@ -46,10 +62,25 @@ class DatabaseEncryption:
                 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
                 from cryptography.hazmat.backends import default_backend
                 
+                # Get salt from environment or generate a secure one
+                salt_env = os.getenv("DB_ENCRYPTION_SALT")
+                if salt_env:
+                    try:
+                        salt = base64.urlsafe_b64decode(salt_env.encode())
+                    except Exception:
+                        logger.warning("Invalid salt in DB_ENCRYPTION_SALT, generating new one")
+                        salt = secrets.token_bytes(16)
+                else:
+                    salt = secrets.token_bytes(16)
+                    logger.warning(
+                        "No DB_ENCRYPTION_SALT found, using random salt. "
+                        "For production, set DB_ENCRYPTION_SALT environment variable with a base64-encoded 16-byte salt."
+                    )
+                
                 kdf = PBKDF2HMAC(
                     algorithm=hashes.SHA256(),
                     length=32,
-                    salt=b'db_encryption_salt',
+                    salt=salt,
                     iterations=100000,
                     backend=default_backend()
                 )

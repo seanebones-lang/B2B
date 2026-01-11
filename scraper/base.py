@@ -12,6 +12,7 @@ from urllib3.util.retry import Retry
 
 from utils.logging import get_logger
 from utils.retry import retry_scraper
+from utils.circuit_breaker import get_circuit_breaker
 import config
 
 logger = get_logger(__name__)
@@ -25,7 +26,7 @@ class BaseScraper(ABC):
         delay_min: Optional[int] = None,
         delay_max: Optional[int] = None,
         timeout: Optional[int] = None
-    ):
+    ) -> None:
         """
         Initialize base scraper
         
@@ -87,7 +88,7 @@ class BaseScraper(ABC):
     @retry_scraper(max_attempts=3)
     def _fetch(self, url: str, max_retries: int = 3) -> requests.Response:
         """
-        Fetch URL with retries and anti-detection
+        Fetch URL with retries, anti-detection, and circuit breaker protection
         
         Args:
             url: URL to fetch
@@ -97,9 +98,29 @@ class BaseScraper(ABC):
             Response object
             
         Raises:
-            Exception: If fetch fails after all retries
+            Exception: If fetch fails after all retries or circuit breaker is open
         """
-        try:
+        # Validate URL
+        if not url or not isinstance(url, str):
+            raise ValueError("Invalid URL provided")
+        
+        if not url.startswith(('http://', 'https://')):
+            raise ValueError(f"URL must start with http:// or https://: {url}")
+        
+        # Get circuit breaker for scraper
+        breaker = get_circuit_breaker(
+            "scraper",
+            failure_threshold=5,
+            timeout=60,
+            expected_exception=(
+                requests.exceptions.RequestException,
+                requests.exceptions.Timeout,
+                requests.exceptions.HTTPError
+            )
+        )
+        
+        def _make_request():
+            """Make HTTP request wrapped in circuit breaker"""
             self._delay()
             logger.debug("Fetching URL", url=url)
             
@@ -111,18 +132,66 @@ class BaseScraper(ABC):
             )
             response.raise_for_status()
             
-            logger.info("Successfully fetched URL", url=url, status_code=response.status_code)
+            # Validate response content
+            if not response.content:
+                logger.warning("Empty response received", url=url)
+                raise ValueError("Empty response received")
+            
+            logger.info(
+                "Successfully fetched URL",
+                url=url,
+                status_code=response.status_code,
+                content_length=len(response.content)
+            )
             return response
+        
+        try:
+            # Use circuit breaker to protect request
+            return breaker.call(_make_request)
             
         except requests.exceptions.Timeout as e:
             logger.error("Request timeout", url=url, error=str(e))
-            raise
+            raise requests.exceptions.Timeout(f"Request timeout: {url}") from e
+            
         except requests.exceptions.HTTPError as e:
-            logger.error("HTTP error", url=url, status_code=e.response.status_code, error=str(e))
+            status_code = e.response.status_code if e.response else None
+            logger.error(
+                "HTTP error",
+                url=url,
+                status_code=status_code,
+                error=str(e)
+            )
+            
+            # Handle specific status codes
+            if status_code == 429:  # Rate limited
+                if e.response and e.response.headers:
+                    retry_after = int(e.response.headers.get('Retry-After', 60))
+                else:
+                    retry_after = 60
+                logger.warning("Rate limited", url=url, retry_after=retry_after)
+                raise requests.exceptions.HTTPError(
+                    f"Rate limited. Retry after {retry_after} seconds: {url}"
+                ) from e
+            
+            if status_code == 404:  # Not found - don't retry
+                raise requests.exceptions.HTTPError(f"Resource not found: {url}") from e
+            
             raise
+            
         except requests.exceptions.RequestException as e:
             logger.error("Request failed", url=url, error=str(e))
-            raise
+            raise requests.exceptions.RequestException(f"Request failed: {url}") from e
+            
+        except Exception as e:
+            logger.error(
+                "Unexpected error in _fetch",
+                url=url,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            # Preserve original exception type instead of raising generic Exception
+            # This maintains exception type information for better error handling upstream
+            raise type(e)(f"Unexpected error fetching {url}: {str(e)}") from e
     
     @abstractmethod
     def scrape_reviews(

@@ -13,6 +13,10 @@ import streamlit as st
 from pydantic import BaseModel, Field, validator
 from pydantic_settings import BaseSettings
 
+from utils.audit import get_audit_logger
+from utils.secrets_manager import get_secrets_manager
+from utils.security_monitor import get_security_monitor
+
 
 class SecuritySettings(BaseSettings):
     """Security configuration settings"""
@@ -84,15 +88,31 @@ class InputValidator:
         Returns:
             True if valid format, False otherwise
         """
+        audit_logger = get_audit_logger()
+        
         if not api_key or not isinstance(api_key, str):
+            audit_logger.log_input_validation_failure(
+                "api_key",
+                "",
+                "Empty or invalid type"
+            )
             return False
         
         # xAI API keys are typically 40+ characters, alphanumeric
         if len(api_key) < 20:
+            audit_logger.log_input_validation_failure(
+                "api_key",
+                api_key[:10] + "...",
+                "Too short"
+            )
             return False
         
         # Check for suspicious patterns
         if any(pattern in api_key.lower() for pattern in ['script', 'javascript', '<', '>']):
+            audit_logger.log_security_threat(
+                "suspicious_api_key",
+                {"pattern": "xss_pattern_detected"}
+            )
             return False
         
         return True
@@ -168,6 +188,7 @@ class SecurityManager:
         Returns:
             API key if found and valid, None otherwise
         """
+        audit_logger = get_audit_logger()
         api_key = None
         secrets_manager = get_secrets_manager()
         
@@ -184,9 +205,17 @@ class SecurityManager:
         else:
             api_key = secrets_manager.get_secret("XAI_API_KEY", encrypted=False)
         
+        security_monitor = get_security_monitor()
+        
         if api_key and InputValidator.validate_api_key(api_key):
+            # Log API key usage (hashed)
+            api_key_hash = self.hash_api_key(api_key)
+            audit_logger.log_api_key_usage(api_key_hash, "retrieve", True)
             return api_key
         
+        # Log failed API key retrieval
+        audit_logger.log_api_key_usage("invalid", "retrieve", False)
+        security_monitor.record_event("auth_failure", "api_key_retrieval")
         return None
     
     def hash_api_key(self, api_key: str) -> str:
@@ -233,11 +262,25 @@ class SecurityManager:
         Returns:
             Sanitized value
         """
+        audit_logger = get_audit_logger()
+        
         if isinstance(value, str):
             # Check for XSS and SQL injection
+            security_monitor = get_security_monitor()
+            
             if InputValidator.detect_xss(value):
+                audit_logger.log_security_threat(
+                    "xss_attempt",
+                    {"input_preview": value[:100]}
+                )
+                security_monitor.record_event("security_threat", "xss", {"input_preview": value[:100]})
                 raise ValueError("Potentially malicious input detected (XSS)")
             if InputValidator.detect_sql_injection(value):
+                audit_logger.log_security_threat(
+                    "sql_injection_attempt",
+                    {"input_preview": value[:100]}
+                )
+                security_monitor.record_event("security_threat", "sql_injection", {"input_preview": value[:100]})
                 raise ValueError("Potentially malicious input detected (SQL Injection)")
             
             return InputValidator.sanitize_string(value)

@@ -33,11 +33,16 @@ jobs:
         pip install black ruff mypy
         black --check .
         ruff check .
-        mypy . --ignore-missing-imports || true
+        mypy . --ignore-missing-imports --show-error-codes || true
+    
+    - name: Type check summary
+      run: |
+        echo "## Type Check Summary" >> $GITHUB_STEP_SUMMARY
+        mypy . --ignore-missing-imports --show-error-codes 2>&1 | head -50 >> $GITHUB_STEP_SUMMARY || true
     
     - name: Run tests with coverage
       run: |
-        pytest tests/ -v --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing
+        pytest tests/ -v --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=90
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -46,6 +51,11 @@ jobs:
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
+    
+    - name: Coverage summary
+      run: |
+        echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+        coverage report --format=markdown >> $GITHUB_STEP_SUMMARY || true
     
     - name: Security scan with Bandit
       run: |

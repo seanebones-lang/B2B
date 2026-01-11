@@ -2,6 +2,7 @@
 
 import os
 import base64
+import secrets
 from typing import Optional
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -46,11 +47,30 @@ class SecretsManager:
         Returns:
             Fernet cipher suite
         """
-        # Derive key from password
+        # Get salt from environment or generate a secure one
+        # In production, store salt securely (e.g., in environment variable or secure storage)
+        salt_env = os.getenv("ENCRYPTION_SALT")
+        if salt_env:
+            # Use salt from environment (base64 encoded)
+            try:
+                salt = base64.urlsafe_b64decode(salt_env.encode())
+            except Exception:
+                logger.warning("Invalid salt in ENCRYPTION_SALT, generating new one")
+                salt = secrets.token_bytes(16)
+        else:
+            # Generate secure random salt (16 bytes = 128 bits)
+            # Note: In production, this should be stored securely and reused
+            salt = secrets.token_bytes(16)
+            logger.warning(
+                "No ENCRYPTION_SALT found, using random salt. "
+                "For production, set ENCRYPTION_SALT environment variable with a base64-encoded 16-byte salt."
+            )
+        
+        # Derive key from password using secure salt
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=b'fixed_salt_for_key_derivation',  # In production, use random salt stored securely
+            salt=salt,
             iterations=100000,
             backend=default_backend()
         )

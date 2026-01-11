@@ -67,39 +67,50 @@ class CapterraScraper(BaseScraper):
                     if len(reviews) >= max_reviews:
                         break
                     
-                    # Extract review text
-                    text_elem = element.find(['p', 'div'], class_=re.compile(r'text|content|review-text|body|comment', re.I))
-                    if not text_elem:
-                        text_elem = element.find('p')
-                    
-                    review_text = text_elem.get_text(strip=True) if text_elem else ""
-                    
-                    if not review_text or len(review_text) < 20:
-                        continue
-                    
-                    # Extract rating
-                    rating_elem = element.find(['span', 'div'], class_=re.compile(r'rating|star', re.I))
-                    rating = None
-                    if rating_elem:
-                        rating_text = rating_elem.get_text(strip=True)
-                        rating_match = re.search(r'(\d+)', rating_text)
-                        if rating_match:
-                            rating = int(rating_match.group(1))
-                    
-                    # Extract date
-                    date_elem = element.find(['time', 'span', 'div'], class_=re.compile(r'date|time', re.I))
-                    date = None
-                    if date_elem:
-                        date = date_elem.get_text(strip=True)
-                    
-                    # Only include 1-2 star reviews
-                    if rating and rating <= 2:
-                        reviews.append({
-                            "text": review_text,
-                            "rating": rating,
-                            "date": date,
-                            "source": "Capterra"
-                        })
+                    try:
+                        # Extract review text with error handling
+                        text_elem = element.find(['p', 'div'], class_=re.compile(r'text|content|review-text|body|comment', re.I))
+                        if not text_elem:
+                            text_elem = element.find('p')
+                        
+                        review_text = text_elem.get_text(strip=True) if text_elem else ""
+                        
+                        if not review_text or len(review_text) < 20:
+                            continue
+                        
+                        # Extract rating with error handling
+                        rating_elem = element.find(['span', 'div'], class_=re.compile(r'rating|star', re.I))
+                        rating = None
+                        if rating_elem:
+                            try:
+                                rating_text = rating_elem.get_text(strip=True)
+                                rating_match = re.search(r'(\d+)', rating_text)
+                                if rating_match:
+                                    rating = int(rating_match.group(1))
+                            except (ValueError, AttributeError) as e:
+                                logger.debug("Error extracting rating", error=str(e))
+                                continue
+                        
+                        # Extract date with error handling
+                        date_elem = element.find(['time', 'span', 'div'], class_=re.compile(r'date|time', re.I))
+                        date = None
+                        if date_elem:
+                            try:
+                                date = date_elem.get_text(strip=True)
+                            except AttributeError:
+                                pass
+                        
+                        # Only include 1-2 star reviews
+                        if rating and rating <= 2:
+                            reviews.append({
+                                "text": review_text,
+                                "rating": rating,
+                                "date": date,
+                                "source": "Capterra"
+                            })
+                    except Exception as e:
+                        logger.warning("Error extracting review element", error=str(e), tool_name=tool_name)
+                        continue  # Skip this element and continue
                 
                 # Check for next page
                 next_page = soup.find('a', {'aria-label': re.compile(r'next|page', re.I)})
@@ -108,8 +119,26 @@ class CapterraScraper(BaseScraper):
                 
                 page += 1
                 
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response else None
+                if status_code == 404:
+                    logger.info("Page not found, stopping", page=page, tool_name=tool_name)
+                    break
+                elif status_code == 429:
+                    logger.warning("Rate limited, stopping", page=page, tool_name=tool_name)
+                    break
+                else:
+                    logger.error("HTTP error scraping Capterra page", page=page, tool_name=tool_name, status_code=status_code, error=str(e))
+                    break
+            except requests.exceptions.Timeout as e:
+                logger.error("Timeout scraping Capterra page", page=page, tool_name=tool_name, error=str(e))
+                break
+            except requests.exceptions.RequestException as e:
+                logger.error("Request error scraping Capterra page", page=page, tool_name=tool_name, error=str(e))
+                break
             except Exception as e:
-                logger.error("Error scraping Capterra page", page=page, tool_name=tool_name, error=str(e))
+                logger.error("Unexpected error scraping Capterra page", page=page, tool_name=tool_name, error=str(e), error_type=type(e).__name__)
                 break
         
+        logger.info("Scraping complete", tool_name=tool_name, reviews_found=len(reviews), max_reviews=max_reviews)
         return reviews[:max_reviews]

@@ -151,7 +151,9 @@ class BaseAsyncScraper(ABC):
                     raise
                 await asyncio.sleep(2 ** attempt)
         
-        raise Exception(f"Failed to fetch {url} after {max_retries} attempts")
+        # This should never be reached as all exceptions are re-raised on last attempt
+        # This is a safety fallback in case of unexpected control flow
+        raise RuntimeError(f"Failed to fetch {url} after {max_retries} attempts - unexpected control flow")
     
     @abstractmethod
     async def scrape_reviews(

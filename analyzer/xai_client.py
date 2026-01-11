@@ -11,6 +11,8 @@ from utils.logging import get_logger
 from utils.retry import retry_api_call
 from utils.security import InputValidator
 from utils.cache import cached
+from utils.circuit_breaker import get_circuit_breaker
+from openai import APIError, RateLimitError, APIConnectionError
 import config
 
 logger = get_logger(__name__)
@@ -95,15 +97,28 @@ Format as JSON:
 }}
 """
         
-        try:
-            logger.info("Analyzing patterns", tool_name=tool_name, pattern_count=len(patterns))
-            
-            response = self.client.chat.completions.create(
+        # Get circuit breaker for xAI API
+        breaker = get_circuit_breaker(
+            "xai_api",
+            failure_threshold=5,
+            timeout=60,
+            expected_exception=(APIError, RateLimitError, APIConnectionError)
+        )
+        
+        def _make_api_call():
+            """Make API call wrapped in circuit breaker"""
+            return self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.temperature,
                 max_tokens=self.max_tokens
             )
+        
+        try:
+            logger.info("Analyzing patterns", tool_name=tool_name, pattern_count=len(patterns))
+            
+            # Use circuit breaker to protect API call
+            response = breaker.call(_make_api_call)
             
             result_text = response.choices[0].message.content
             
