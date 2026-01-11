@@ -1,8 +1,0 @@
-# Streamlit Cloud packages.txt
-# This file is for APT system packages only (not Python packages)
-# Python packages go in requirements.txt
-# 
-# If you need system libraries, add them here (one per line, no comments)
-# Example:
-# libxml2-dev
-# libxslt1-dev
