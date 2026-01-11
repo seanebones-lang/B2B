@@ -147,9 +147,9 @@ def run_full_analysis(selected_tools: List[str]):
     current_step = 0
     
     try:
-        # Initialize scrapers
-        g2_scraper = G2Scraper()
-        capterra_scraper = CapterraScraper()
+        # Initialize multi-source scraper
+        from scraper.multi_source_scraper import MultiSourceScraper
+        multi_scraper = MultiSourceScraper()
         pattern_extractor = PatternExtractor()
         
         # Process each tool
@@ -158,38 +158,27 @@ def run_full_analysis(selected_tools: List[str]):
             if not tool_config:
                 continue
             
-            status_text.text(f"📥 Scraping reviews for {tool_name}...")
+            status_text.text(f"📥 Scraping reviews for {tool_name} from multiple sources...")
             current_step += 1
             progress_bar.progress(current_step / total_steps)
             
-            # Scrape reviews
-            reviews = []
-            
-            # Try G2
+            # Scrape from all sources with intelligent fallbacks
             try:
-                status_text.text(f"  → Scraping G2.com...")
-                g2_reviews = g2_scraper.scrape_reviews(
-                    tool_name,
+                reviews, sources_succeeded = multi_scraper.scrape_all_sources(
+                    tool_name=tool_name,
                     tool_slug=tool_config.get("g2_slug"),
-                    max_reviews=config.MAX_REVIEWS_PER_TOOL
-                )
-                reviews.extend(g2_reviews)
-                st.success(f"  ✓ Found {len(g2_reviews)} reviews from G2")
-            except Exception as e:
-                st.warning(f"  ⚠️ G2 scraping failed: {str(e)}")
-            
-            # Try Capterra
-            try:
-                status_text.text(f"  → Scraping Capterra...")
-                capterra_reviews = capterra_scraper.scrape_reviews(
-                    tool_name,
                     tool_id=tool_config.get("capterra_id"),
-                    max_reviews=config.MAX_REVIEWS_PER_TOOL
+                    product_slug=tool_config.get("ph_slug"),
+                    max_per_source=config.MAX_REVIEWS_PER_TOOL
                 )
-                reviews.extend(capterra_reviews)
-                st.success(f"  ✓ Found {len(capterra_reviews)} reviews from Capterra")
+                
+                if reviews:
+                    st.success(f"✓ Found {len(reviews)} reviews from: {', '.join(sources_succeeded)}")
+                else:
+                    st.warning(f"⚠️ No reviews found from any source for {tool_name}")
             except Exception as e:
-                st.warning(f"  ⚠️ Capterra scraping failed: {str(e)}")
+                st.error(f"❌ Error scraping {tool_name}: {str(e)}")
+                reviews = []
             
             if not reviews:
                 st.error(f"❌ No reviews found for {tool_name}. Skipping...")

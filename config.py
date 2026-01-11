@@ -40,18 +40,18 @@ class Settings(BaseSettings):
 # Initialize settings
 settings = Settings()
 
-# Top 10 B2B SaaS tools to analyze
+# Top 10 B2B SaaS tools to analyze (with multi-source metadata)
 B2B_TOOLS: List[Dict[str, str]] = [
-    {"name": "Salesforce", "category": "CRM", "g2_slug": "salesforce", "capterra_id": "165"},
-    {"name": "HubSpot", "category": "CRM/Marketing", "g2_slug": "hubspot", "capterra_id": "1007"},
-    {"name": "Slack", "category": "Comms", "g2_slug": "slack", "capterra_id": "175"},
-    {"name": "Asana", "category": "PM", "g2_slug": "asana", "capterra_id": "110"},
-    {"name": "Notion", "category": "Productivity", "g2_slug": "notion", "capterra_id": "179"},
-    {"name": "Zoom", "category": "Video", "g2_slug": "zoom", "capterra_id": "115"},
-    {"name": "Intercom", "category": "Customer Support", "g2_slug": "intercom", "capterra_id": "1005"},
-    {"name": "Zendesk", "category": "Customer Support", "g2_slug": "zendesk", "capterra_id": "103"},
-    {"name": "Workday", "category": "HRIS", "g2_slug": "workday", "capterra_id": "1008"},
-    {"name": "BambooHR", "category": "HRIS", "g2_slug": "bamboo-hr", "capterra_id": "1009"},
+    {"name": "Salesforce", "category": "CRM", "g2_slug": "salesforce", "capterra_id": "165", "ph_slug": "salesforce", "trustpilot_slug": "www.salesforce.com"},
+    {"name": "HubSpot", "category": "CRM/Marketing", "g2_slug": "hubspot", "capterra_id": "1007", "ph_slug": "hubspot", "trustpilot_slug": "www.hubspot.com"},
+    {"name": "Slack", "category": "Comms", "g2_slug": "slack", "capterra_id": "175", "ph_slug": "slack", "trustpilot_slug": "slack.com"},
+    {"name": "Asana", "category": "PM", "g2_slug": "asana", "capterra_id": "110", "ph_slug": "asana", "trustpilot_slug": "asana.com"},
+    {"name": "Notion", "category": "Productivity", "g2_slug": "notion", "capterra_id": "179", "ph_slug": "notion-2-0", "trustpilot_slug": "notion.so"},
+    {"name": "Zoom", "category": "Video", "g2_slug": "zoom", "capterra_id": "115", "ph_slug": "zoom", "trustpilot_slug": "zoom.us"},
+    {"name": "Intercom", "category": "Customer Support", "g2_slug": "intercom", "capterra_id": "1005", "ph_slug": "intercom", "trustpilot_slug": "www.intercom.com"},
+    {"name": "Zendesk", "category": "Customer Support", "g2_slug": "zendesk", "capterra_id": "103", "ph_slug": "zendesk", "trustpilot_slug": "www.zendesk.com"},
+    {"name": "Workday", "category": "HRIS", "g2_slug": "workday", "capterra_id": "1008", "ph_slug": "workday", "trustpilot_slug": "www.workday.com"},
+    {"name": "BambooHR", "category": "HRIS", "g2_slug": "bamboo-hr", "capterra_id": "1009", "ph_slug": "bamboohr", "trustpilot_slug": "www.bamboohr.com"},
 ]
 
 # Pain point keywords/phrases for pattern extraction
