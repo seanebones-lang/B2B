@@ -21,9 +21,9 @@ class Settings(BaseSettings):
     min_pattern_mentions: int = int(os.getenv("MIN_PATTERN_MENTIONS", "5"))
     pattern_frequency_threshold: float = float(os.getenv("PATTERN_FREQUENCY_THRESHOLD", "0.15"))
     
-    # xAI Grok settings
+    # xAI Grok settings (Updated Jan 2026 - Grok 4.1 Fast with 2M token context)
     xai_base_url: str = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
-    xai_model: str = os.getenv("XAI_MODEL", "grok-beta")
+    xai_model: str = os.getenv("XAI_MODEL", "grok-3")  # Fallback: grok-3 (stable), Latest: grok-4.1-fast-reasoning
     xai_temperature: float = float(os.getenv("XAI_TEMPERATURE", "0.3"))
     xai_max_tokens: int = int(os.getenv("XAI_MAX_TOKENS", "2000"))
     
