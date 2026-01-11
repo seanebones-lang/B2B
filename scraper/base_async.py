@@ -10,6 +10,7 @@ from fake_useragent import UserAgent
 
 from utils.logging import get_logger
 from utils.retry import retry_scraper
+from utils.compliance import ComplianceChecker
 import config
 
 logger = get_logger(__name__)
@@ -39,6 +40,8 @@ class BaseAsyncScraper(ABC):
         self.delay_max = delay_max or config.settings.scrape_delay_max
         self.timeout = timeout or config.settings.scrape_timeout
         self.max_connections = max_connections
+        self.compliance = ComplianceChecker()
+        self.request_count = {}  # Track requests per domain
         
         # Create async HTTP client with connection pooling
         limits = httpx.Limits(
@@ -93,6 +96,11 @@ class BaseAsyncScraper(ABC):
         logger.debug("Delaying request", delay_seconds=delay)
         await asyncio.sleep(delay)
     
+    def _check_robots_txt(self, url: str) -> bool:
+        """Check robots.txt before fetching"""
+        user_agent = self._get_headers().get("User-Agent", "*")
+        return self.compliance.check_robots_txt(url, user_agent)
+    
     async def _fetch(self, url: str, max_retries: int = 3) -> httpx.Response:
         """
         Fetch URL with retries and anti-detection (async)
@@ -109,6 +117,23 @@ class BaseAsyncScraper(ABC):
         """
         for attempt in range(max_retries):
             try:
+                # Check robots.txt (only on first attempt)
+                if attempt == 0:
+                    if not self._check_robots_txt(url):
+                        logger.warning("URL disallowed by robots.txt", url=url)
+                        self.compliance.log_compliance_violation(url, "robots_txt")
+                        raise RuntimeError(f"URL disallowed by robots.txt: {url}")
+                
+                # Throttle requests (1 req/sec per domain)
+                from urllib.parse import urlparse
+                domain = urlparse(url).netloc
+                if domain in self.request_count:
+                    if self.compliance.should_throttle(domain, self.request_count[domain]):
+                        await asyncio.sleep(1)
+                else:
+                    self.request_count[domain] = 0
+                self.request_count[domain] = self.request_count.get(domain, 0) + 1
+                
                 await self._delay()
                 logger.debug("Fetching URL", url=url, attempt=attempt + 1)
                 

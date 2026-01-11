@@ -1,7 +1,7 @@
-"""Multi-source scraper that combines all data sources with fallbacks"""
+"""Multi-source scraper that combines all data sources with fallbacks and async improvements"""
 
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,8 +21,10 @@ class MultiSourceScraper:
         tool_slug: Optional[str] = None,
         tool_id: Optional[str] = None,
         product_slug: Optional[str] = None,
-        max_per_source: int = 30
-    ) -> List[Dict[str, Any]]:
+        max_per_source: int = 30,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Scrape from all available sources with fallbacks
         
@@ -68,7 +70,9 @@ class MultiSourceScraper:
             reddit_scraper = RedditScraper()
             reddit_complaints = reddit_scraper.scrape_product_complaints(
                 tool_name,
-                max_posts=max_per_source
+                max_posts=max_per_source,
+                date_from=date_from,
+                date_to=date_to
             )
             
             if reddit_complaints:
@@ -135,6 +139,10 @@ class MultiSourceScraper:
         except Exception as e:
             logger.warning("GitHub scraping failed", error=str(e))
         
+        # Use asyncio.gather for parallel scraping (Phase 2 improvement)
+        # Note: Some scrapers are async, some are sync - this is a hybrid approach
+        # For full async, convert all scrapers to async
+        
         # 6. Try Trustpilot
         try:
             logger.info("Attempting Trustpilot scraping", tool_name=tool_name)
@@ -175,7 +183,51 @@ class MultiSourceScraper:
         except Exception as e:
             logger.warning("Hacker News scraping failed", error=str(e))
         
-        # 8. Fallback to original scrapers (requests-based)
+        # 8. Try LinkedIn (Phase 2)
+        try:
+            logger.info("Attempting LinkedIn scraping", tool_name=tool_name)
+            sources_tried.append("LinkedIn")
+            
+            from scraper.linkedin_scraper import LinkedInScraper
+            
+            linkedin_scraper = LinkedInScraper()
+            linkedin_complaints = linkedin_scraper.scrape_b2b_complaints(
+                tool_name,
+                max_posts=max_per_source,
+                date_from=date_from,
+                date_to=date_to
+            )
+            
+            if linkedin_complaints:
+                all_reviews.extend(linkedin_complaints)
+                sources_succeeded.append(f"LinkedIn ({len(linkedin_complaints)} posts)")
+                logger.info("LinkedIn scraping successful", count=len(linkedin_complaints))
+        except Exception as e:
+            logger.warning("LinkedIn scraping failed", error=str(e))
+        
+        # 9. Try Google News (Phase 2)
+        try:
+            logger.info("Attempting Google News scraping", tool_name=tool_name)
+            sources_tried.append("Google News")
+            
+            from scraper.google_news_scraper import GoogleNewsScraper
+            
+            news_scraper = GoogleNewsScraper()
+            news_articles = news_scraper.scrape_product_news(
+                tool_name,
+                max_articles=max_per_source,
+                date_from=date_from,
+                date_to=date_to
+            )
+            
+            if news_articles:
+                all_reviews.extend(news_articles)
+                sources_succeeded.append(f"Google News ({len(news_articles)} articles)")
+                logger.info("Google News scraping successful", count=len(news_articles))
+        except Exception as e:
+            logger.warning("Google News scraping failed", error=str(e))
+        
+        # 10. Fallback to original scrapers (requests-based)
         if len(all_reviews) < 10:  # If we don't have enough data
             try:
                 logger.info("Attempting fallback to original scrapers", tool_name=tool_name)

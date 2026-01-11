@@ -59,13 +59,19 @@ class TwitterScraper:
             logger.warning("No working Nitter instance found")
             return []
         
-        # Search queries for complaints
+        # Advanced search queries with operators (2026 best practices)
+        # Using operators: "Slack issues since:2025-12-01 filter:replies min_faves:5"
+        from datetime import datetime, timedelta
+        
+        # Default to last 30 days if no date specified
+        default_since = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        
         search_queries = [
-            f"{tool_name} problem",
-            f"{tool_name} issue",
-            f"{tool_name} broken",
-            f"{tool_name} disappointed",
-            f"{tool_name} switching",
+            f"{tool_name} issues since:{default_since} filter:replies min_faves:5",
+            f"{tool_name} problems since:{default_since} filter:replies",
+            f"{tool_name} broken since:{default_since}",
+            f"{tool_name} disappointed since:{default_since} filter:replies",
+            f"{tool_name} switching since:{default_since}",
         ]
         
         for query in search_queries:

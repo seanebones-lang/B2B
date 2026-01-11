@@ -13,6 +13,7 @@ from urllib3.util.retry import Retry
 from utils.logging import get_logger
 from utils.retry import retry_scraper
 from utils.circuit_breaker import get_circuit_breaker
+from utils.compliance import ComplianceChecker
 import config
 
 logger = get_logger(__name__)
@@ -39,6 +40,8 @@ class BaseScraper(ABC):
         self.delay_min = delay_min or config.settings.scrape_delay_min
         self.delay_max = delay_max or config.settings.scrape_delay_max
         self.timeout = timeout or config.settings.scrape_timeout
+        self.compliance = ComplianceChecker()
+        self.request_count = {}  # Track requests per domain
         
         # Create session with retry strategy
         self.session = requests.Session()
@@ -85,6 +88,11 @@ class BaseScraper(ABC):
         logger.debug("Delaying request", delay_seconds=delay)
         time.sleep(delay)
     
+    def _check_robots_txt(self, url: str) -> bool:
+        """Check robots.txt before fetching"""
+        user_agent = self._get_headers().get("User-Agent", "*")
+        return self.compliance.check_robots_txt(url, user_agent)
+    
     @retry_scraper(max_attempts=3)
     def _fetch(self, url: str, max_retries: int = 3) -> requests.Response:
         """
@@ -121,6 +129,25 @@ class BaseScraper(ABC):
         
         def _make_request():
             """Make HTTP request wrapped in circuit breaker"""
+            # Check robots.txt before making request
+            if not self._check_robots_txt(url):
+                logger.warning("URL disallowed by robots.txt", url=url)
+                self.compliance.log_compliance_violation(url, "robots_txt")
+                raise RuntimeError(f"URL disallowed by robots.txt: {url}")
+            
+            # Throttle requests (1 req/sec per domain)
+            from urllib.parse import urlparse
+            import time
+            domain = urlparse(url).netloc
+            if domain in self.request_count:
+                if self.compliance.should_throttle(domain, self.request_count[domain]):
+                    time.sleep(1)
+                    # Reset counter after throttling
+                    self.request_count[domain] = 0
+            else:
+                self.request_count[domain] = 0
+            self.request_count[domain] = self.request_count.get(domain, 0) + 1
+            
             self._delay()
             logger.debug("Fetching URL", url=url)
             

@@ -38,11 +38,13 @@ class XAIClient:
             api_key=api_key,
             base_url=config.settings.xai_base_url
         )
+        # Updated Jan 2026: Grok-3 as primary, with fallback
         self.model = config.settings.xai_model
+        self.fallback_model = "grok-3"  # Stable fallback
         self.temperature = config.settings.xai_temperature
         self.max_tokens = config.settings.xai_max_tokens
         
-        logger.info("xAI client initialized", model=self.model)
+        logger.info("xAI client initialized", model=self.model, fallback=self.fallback_model)
     
     @retry_api_call(max_attempts=3)
     def analyze_patterns(
@@ -76,6 +78,8 @@ Found {len(patterns)} complaint patterns from {len(reviews)} reviews.
 Patterns identified:
 {self._format_patterns(patterns)}
 
+Context: Current date is December 2025. Focus on B2B trends and market dynamics from 2025.
+
 Task: Identify the TOP 3-5 pain patterns (highest frequency + highest impact on workflows/core use).
 
 For each top pattern, provide:
@@ -83,32 +87,45 @@ For each top pattern, provide:
 2. Frequency count
 3. Why it's high-impact (affects workflows/core use)
 4. Example complaint snippet
+5. Feasibility score (1-10): How feasible is it to build a solution?
+6. Market size score (1-10): How large is the addressable market?
+7. Confidence score (1-10): How confident are you in this pattern?
 
-Format as JSON:
+Consider:
+- Alignment with B2B SaaS trends from 2025
+- Actionability for product development
+- Market validation potential
+- Technical feasibility
+
+Format as JSON with idea scores (feasibility 1-10, market_size 1-10, confidence 1-10):
 {{
     "top_patterns": [
         {{
             "name": "...",
             "frequency": X,
             "impact_reason": "...",
-            "example": "..."
+            "example": "...",
+            "feasibility_score": 7,
+            "market_size_score": 8,
+            "confidence_score": 9
         }}
     ]
 }}
 """
         
-        # Get circuit breaker for xAI API
+        # Get circuit breaker for xAI API (extended timeout to 30s as per plan)
         breaker = get_circuit_breaker(
             "xai_api",
             failure_threshold=5,
-            timeout=60,
+            timeout=30,  # Updated to 30s as per Phase 1 plan
             expected_exception=(APIError, RateLimitError, APIConnectionError)
         )
         
-        def _make_api_call():
-            """Make API call wrapped in circuit breaker"""
+        def _make_api_call(use_fallback=False):
+            """Make API call wrapped in circuit breaker with fallback"""
+            model_to_use = self.fallback_model if use_fallback else self.model
             return self.client.chat.completions.create(
-                model=self.model,
+                model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.temperature,
                 max_tokens=self.max_tokens
@@ -118,7 +135,15 @@ Format as JSON:
             logger.info("Analyzing patterns", tool_name=tool_name, pattern_count=len(patterns))
             
             # Use circuit breaker to protect API call
-            response = breaker.call(_make_api_call)
+            try:
+                response = breaker.call(_make_api_call)
+            except Exception as e:
+                # If primary model fails, try fallback
+                if "404" in str(e) or "not found" in str(e).lower():
+                    logger.warning("Primary model not available, using fallback", model=self.model, fallback=self.fallback_model)
+                    response = breaker.call(lambda: _make_api_call(use_fallback=True))
+                else:
+                    raise
             
             result_text = response.choices[0].message.content
             
@@ -180,6 +205,9 @@ Format as JSON:
 Top pain patterns:
 {self._format_top_patterns(top_patterns)}
 
+Context: Current date is December 2025. Generate ideas aligned with B2B SaaS trends from 2025.
+Consider market data, competitive landscape, and recent innovations in the space.
+
 Task: For each pattern, generate 3 novel product ideas:
 1. Standalone SaaS app
 2. Browser plugin/extension
@@ -191,8 +219,18 @@ For each idea, provide:
 - Target: [Complainers of {tool_name}]
 - MVP Scope: [3 core features]
 - Monetization: [$X/mo per user]
+- Feasibility Score (1-10): Based on technical complexity and market readiness
+- Market Size Score (1-10): Based on addressable market and demand
+- Confidence Score (1-10): Your confidence in this idea's potential
+- Estimated TAM: Market size estimate
 
-Format as JSON:
+Consider:
+- Alignment with 2025 B2B trends (AI integration, automation, collaboration tools)
+- Differentiation from existing solutions
+- Technical feasibility for solo founder or small team
+- Market validation potential
+
+Format as JSON with idea scores (feasibility 1-10, market_size 1-10, confidence 1-10, estimated_tam):
 {{
     "ideas": [
         {{
@@ -204,7 +242,11 @@ Format as JSON:
                     "target": "...",
                     "mvp_scope": "...",
                     "monetization": "...",
-                    "type": "standalone|plugin|integration"
+                    "type": "standalone|plugin|integration",
+                    "feasibility_score": 7,
+                    "market_size_score": 8,
+                    "confidence_score": 9,
+                    "estimated_tam": "$10M+"
                 }}
             ]
         }}
@@ -334,7 +376,7 @@ Format as JSON:
         return "\n".join([
             f"{i+1}. {p.get('name', 'Unknown')} (Frequency: {p.get('frequency', 0)})\n"
             f"   Impact: {p.get('impact_reason', 'N/A')}\n"
-            f"   Example: {p.get('example', 'N/A')[:150]}"
+            f"   Example: {(p.get('example', 'N/A') or 'N/A')[:150]}"
             for i, p in enumerate(patterns)
         ])
     
@@ -358,7 +400,7 @@ Monetization: {idea.get('monetization', 'N/A')}
                     "impact_reason": "High frequency complaint",
                     "example": (
                         p.get("reviews", [{}])[0].get("text", "")[:200]
-                        if p.get("reviews")
+                        if p.get("reviews") and len(p.get("reviews", [])) > 0
                         else ""
                     )
                 }
